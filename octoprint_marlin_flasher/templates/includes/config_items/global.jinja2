@@ -11,7 +11,16 @@
                 <div class="controls">
                     <select id="marlin_flasher_platform_type_{{field_suffix}}" data-bind="value: settingsViewModel.settings.plugins.marlin_flasher.platform_type">
                         <option value="arduino">Arduino</option>
-                        <option value="platform_io">Platform.io</option>
+                        <option value="platform_io">PlatformIO</option>
+                    </select>
+                </div>
+            </div>
+            <div class="control-group">
+                <label class="control-label" for="marlin_flasher_retrieving_method_{{field_suffix}}">{{ _('Retrieving method') }}</label>
+                <div class="controls">
+                    <select id="marlin_flasher_retrieving_method_{{field_suffix}}" data-bind="value: settingsViewModel.settings.plugins.marlin_flasher.retrieving_method">
+                        <option value="upload">Upload file</option>
+                        <option value="url">Download from URL</option>
                     </select>
                 </div>
             </div>

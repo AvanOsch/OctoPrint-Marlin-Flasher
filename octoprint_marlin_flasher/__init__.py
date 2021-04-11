@@ -6,6 +6,7 @@ from octoprint.server import admin_permission
 from octoprint.events import Events
 import flask
 from .flasher import MarlinFlasher
+from .flasher.retrieving_method import RetrievingMethod
 from .validation import RequestValidator
 from .settings import SettingsWrapper
 from .flasher.platform_type import PlatformType
@@ -20,7 +21,7 @@ class MarlinFlasherPlugin(octoprint.plugin.StartupPlugin,
 						  octoprint.plugin.EventHandlerPlugin):
 
 	def on_after_startup(self):
-		self.__flasher = MarlinFlasher(self.__settings_wrapper, self._printer, self, self._plugin_manager, self._identifier)
+		self.__flasher = MarlinFlasher(self.__settings_wrapper, self._printer, self, self._plugin_manager, self._identifier, self._logger)
 		self.__validator = RequestValidator(self.__settings_wrapper)
 
 	def get_settings_defaults(self):
@@ -38,7 +39,8 @@ class MarlinFlasherPlugin(octoprint.plugin.StartupPlugin,
 			pre_flash_script=None,
 			pre_flash_delay=0,
 			post_flash_script=None,
-			post_flash_delay=0
+			post_flash_delay=0,
+			retrieving_method=RetrievingMethod.UPLOAD
 		)
 
 	def get_settings_version(self):
@@ -49,8 +51,7 @@ class MarlinFlasherPlugin(octoprint.plugin.StartupPlugin,
 
 	def on_settings_migrate(self, target, current):
 		defaults = self.get_settings_defaults()
-		current_migration = current
-		if current_migration is None or current_migration < 0:
+		if current is None or current < 1:
 			max_sketch_size = self._settings.get(["max_sketch_size"])
 			if max_sketch_size is None:
 				max_sketch_size = defaults["max_upload_size"]
@@ -67,7 +68,6 @@ class MarlinFlasherPlugin(octoprint.plugin.StartupPlugin,
 			additional_urls = self._settings.get(["additional_urls"])
 			self._settings.set(["additional_urls"], None)
 			self._settings.set(["arduino", "additional_urls"], additional_urls)
-			current_migration = 1
 
 	def on_settings_save(self, data):
 		result = super(MarlinFlasherPlugin, self).on_settings_save(data)
@@ -90,14 +90,15 @@ class MarlinFlasherPlugin(octoprint.plugin.StartupPlugin,
 		return 3
 
 	def is_wizard_required(self):
-		if self.__settings_wrapper.get_platform_type() == PlatformType.ARDUINO:
-			return not self.__settings_wrapper.get_arduino_cli_path() or not self.__settings_wrapper.get_arduino_sketch_ino()
-		else:
-			return not self.__settings_wrapper.get_platformio_cli_path()
+		return True
 
 	def on_event(self, event, payload):
 		if event == Events.CONNECTED:
-			self.__flasher.handle_connected_event()
+			try:
+				self.__flasher.handle_connected_event()
+			except AttributeError:
+				# The plugin hasn't finished booting, and should not care about a printer reconnecting
+				pass
 
 	@octoprint.plugin.BlueprintPlugin.route("/upload_firmware", methods=["POST"])
 	@restricted_access
@@ -107,6 +108,18 @@ class MarlinFlasherPlugin(octoprint.plugin.StartupPlugin,
 		if errors:
 			return flask.make_response(flask.jsonify(errors), 400)
 		result, errors = self.__flasher.upload()
+		if errors:
+			return flask.make_response(flask.jsonify(errors), 400)
+		return flask.make_response(flask.jsonify(result), 200)
+
+	@octoprint.plugin.BlueprintPlugin.route("/download_firmware", methods=["POST"])
+	@restricted_access
+	@admin_permission.require(403)
+	def download_firmware(self):
+		errors = self.__validator.validate_download()
+		if errors:
+			return flask.make_response(flask.jsonify(errors), 400)
+		result, errors = self.__flasher.download()
 		if errors:
 			return flask.make_response(flask.jsonify(errors), 400)
 		return flask.make_response(flask.jsonify(result), 200)
@@ -254,7 +267,19 @@ class MarlinFlasherPlugin(octoprint.plugin.StartupPlugin,
 				repo="OctoPrint-Marlin-Flasher",
 				current=self._plugin_version,
 
-				pip="https://github.com/Renaud11232/OctoPrint-Marlin-Flasher/archive/{target_version}.zip"
+				pip="https://github.com/Renaud11232/OctoPrint-Marlin-Flasher/archive/{target_version}.zip",
+
+				stable_branch=dict(
+					name="Stable",
+					branch="master"
+				),
+
+				prerelease_branches=[
+					dict(
+						name="Prerelease",
+						branch="prerelease"
+					)
+				]
 			)
 		)
 
